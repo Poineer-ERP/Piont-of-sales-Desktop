@@ -1,0 +1,51 @@
+{
+  "name": "pioneer-desktop",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "electron .",
+    "build:win": "electron-builder --win --x64 --publish never",
+    "build:mac": "electron-builder --mac --x64 --publish never"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^40.8.0",
+    "electron-builder": "^25.1.8"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "build": {
+    "appId": "com.qeyam.desktop",
+    "productName": "Qeyam",
+    "directories": {
+      "output": "release-builds"
+    },
+    "files": [
+      "src/**/*",
+      "index.js",
+      "preload.js",
+      "package.json"
+    ],
+    "win": {
+      "target": ["nsis", "zip"],
+      "publisherName": "Qeyam",
+      "icon": "icon.ico",
+      "signingHashAlgorithms": ["sha256"]
+    },
+    "mac": {
+      "target": [
+        { "target": "dmg", "arch": ["x64", "arm64"] },
+        { "target": "zip", "arch": ["x64", "arm64"] }
+      ],
+      "category": "public.app-category.business",
+      "icon": "icon.icns"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}

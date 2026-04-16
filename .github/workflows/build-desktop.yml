@@ -1,0 +1,159 @@
+name: Build Desktop App
+
+on:
+  repository_dispatch:
+    types: [frontend-updated]
+  workflow_dispatch:
+
+jobs:
+  # ── Build for each platform in parallel ────────────────────────────────────
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            build_script: build:win
+            artifact_name: windows-build
+
+          - os: macos-latest
+            build_script: build:mac
+            artifact_name: macos-build
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout desktop repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # ── Get the latest POS frontend build ────────────────────────────────
+      - name: Checkout POS frontend repo
+        uses: actions/checkout@v4
+        with:
+          repository: Poineer-ERP/Point-of-sales
+          token: ${{ secrets.GH_PAT }}
+          path: frontend-source
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend-source
+
+      - name: Build frontend
+        run: npm run build
+        working-directory: frontend-source
+        env:
+          # Use relative paths so Electron can load assets from the local filesystem.
+          # Without this the build defaults to /pos/ which breaks loadFile().
+          VUE_APP_PUBLIC_PATH: './'
+
+      # ── Prepare desktop/src ───────────────────────────────────────────────
+      - name: Clean desktop/src
+        shell: bash
+        run: rm -rf src/* && mkdir -p src
+
+      - name: Copy frontend build into desktop/src
+        shell: bash
+        run: cp -r frontend-source/dist/* src/
+
+      # ── Build Electron app ────────────────────────────────────────────────
+      - name: Install desktop dependencies
+        run: npm ci
+
+      - name: Build Electron app
+        run: npm run ${{ matrix.build_script }}
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Rename outputs to fixed filenames ─────────────────────────────────
+      # Fixed names are required so the GitHub "latest release" URL never changes.
+      # The URL pattern is:
+      #   https://github.com/ORG/REPO/releases/latest/download/FILENAME
+      - name: Rename Windows outputs to fixed filenames
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $releaseDir = "release-builds"
+          $exe = Get-ChildItem -Path $releaseDir -Filter "*.exe" | Select-Object -First 1
+          $zip = Get-ChildItem -Path $releaseDir -Filter "*.zip" | Select-Object -First 1
+          if ($exe) { Rename-Item $exe.FullName "Qeyam-Setup.exe" }
+          if ($zip) { Rename-Item $zip.FullName "Qeyam-win.zip" }
+
+      - name: Rename macOS outputs to fixed filenames
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          cd release-builds
+          # electron-builder names the file Qeyam-x.x.x.dmg — rename to fixed name
+          dmg=$(ls *.dmg 2>/dev/null | grep -v arm64 | head -1)
+          zip=$(ls *.zip 2>/dev/null | grep -v arm64 | head -1)
+          [ -n "$dmg" ] && mv "$dmg" "Qeyam.dmg"
+          [ -n "$zip" ] && mv "$zip" "Qeyam-mac.zip"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: release-builds/
+          retention-days: 7
+
+  # ── Create a GitHub Release with both installers ───────────────────────────
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download Windows build
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-build
+          path: dist/windows
+
+      - name: Download macOS build
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-build
+          path: dist/macos
+
+      - name: Generate version tag
+        id: version
+        run: |
+          DATE=$(date +'%Y.%m.%d')
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "tag=v${DATE}-${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "name=Qeyam Desktop v${DATE}" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.name }}
+          body: |
+            ## What's new
+            Built from frontend commit `${{ github.event.client_payload.sha || github.sha }}`
+
+            ## Direct download links
+            | Platform | Link |
+            |----------|------|
+            | **Windows** installer | [Qeyam-Setup.exe](https://github.com/${{ github.repository }}/releases/latest/download/Qeyam-Setup.exe) |
+            | **Windows** portable  | [Qeyam-win.zip](https://github.com/${{ github.repository }}/releases/latest/download/Qeyam-win.zip) |
+            | **macOS** disk image  | [Qeyam.dmg](https://github.com/${{ github.repository }}/releases/latest/download/Qeyam.dmg) |
+            | **macOS** portable    | [Qeyam-mac.zip](https://github.com/${{ github.repository }}/releases/latest/download/Qeyam-mac.zip) |
+
+            > The links above always point to the **latest** release — bookmark them safely.
+          files: |
+            dist/windows/Qeyam-Setup.exe
+            dist/windows/Qeyam-win.zip
+            dist/macos/Qeyam.dmg
+            dist/macos/Qeyam-mac.zip
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
