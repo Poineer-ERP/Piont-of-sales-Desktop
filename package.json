@@ -1,5 +1,5 @@
 {
-  "name": "pioneer-desktop",
+  "name": "Qeyam-Point-of-sales-Desktop",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
@@ -18,8 +18,8 @@
     "ws": "^8.18.0"
   },
   "build": {
-    "appId": "com.qeyam.desktop",
-    "productName": "Qeyam",
+    "appId": "com.Qeyam.Point-of-sales-Desktop",
+    "productName": "Qeyam Point Of Sales",
     "directories": {
       "output": "release-builds"
     },
@@ -31,7 +31,7 @@
     ],
     "win": {
       "target": ["nsis", "zip"],
-      "publisherName": "Qeyam",
+      "publisherName": "Qeyam Point Of Sales",
       "icon": "icon.ico",
       "signingHashAlgorithms": ["sha256"]
     },
