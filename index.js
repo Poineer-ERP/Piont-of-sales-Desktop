@@ -1,8 +1,35 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, session } = require('electron');
 const path = require('path')
+const fs   = require('fs')
+
+function fixIndexHtml() {
+  const htmlPath = path.join(__dirname, 'src/index.html');
+  let html = fs.readFileSync(htmlPath, 'utf-8');
+  const fixed = html.replace(/((?:href|src|content)=")\/pos\//g, '$1')
+                    .replace(/((?:href|src|content)=")pos\//g,  '$1');
+  if (fixed !== html) {
+    fs.writeFileSync(htmlPath, fixed, 'utf-8');
+  }
+}
 
 app.on('ready', () => {
-  // Create the main app window and load index.html
+  fixIndexHtml();
+
+  const srcDir = path.join(__dirname, 'src');
+
+  // Vue is built with publicPath "/pos/", so lazy-loaded chunks arrive as
+  // file:///pos/... — redirect them transparently to the real src/ folder.
+  session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
+    const url = details.url;
+    if (url.startsWith('file:///pos/')) {
+      const relative    = url.slice('file:///pos/'.length);
+      const redirectURL = 'file://' + path.join(srcDir, relative).replace(/\\/g, '/');
+      callback({ redirectURL });
+    } else {
+      callback({});
+    }
+  });
+
   mainWindow = new BrowserWindow({
     show: false,
     webPreferences: {
