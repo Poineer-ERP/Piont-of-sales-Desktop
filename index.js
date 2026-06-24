@@ -64,11 +64,7 @@ ipcMain.on('print-html', (event, data) => {
     printWin.webContents.print({
         ...data.options,
         silent: true,
-        deviceName,
-        pageSize: {
-          width: 70000,
-          height: 200000
-        },
+        deviceName
       }, (success, failureReason) => {
         if (!success) console.log('Print failed:', failureReason)
         printWin.close()
