@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, session } = require('electron');
 const path = require('path')
 const fs   = require('fs')
+const os   = require('os')
 
 function fixIndexHtml() {
   const htmlPath = path.join(__dirname, 'src/index.html');
@@ -51,24 +52,55 @@ app.on('ready', () => {
 // Listen for print requests
 ipcMain.on('print-html', (event, data) => {
   const printWin = new BrowserWindow({ show: false })
-  printWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(data.data)}`)
+
+  // Receipts (pointOfSale / pointOfSaleKitchen) embed the Tajawal + barcode
+  // fonts as base64 (~220KB HTML). Load via a temp file rather than a giant
+  // data: URL, and surface any load/print failure (the old handler swallowed
+  // them silently, so a failed receipt print looked like "nothing happened").
+  const tmpFile = path.join(
+    os.tmpdir(),
+    `qeyam-print-${Date.now()}-${Math.random().toString(36).slice(2)}.html`
+  )
+
+  const cleanup = () => {
+    try { fs.unlinkSync(tmpFile) } catch (_) {}
+    if (!printWin.isDestroyed()) printWin.close()
+  }
+
+  try {
+    fs.writeFileSync(tmpFile, data.data, 'utf-8')
+  } catch (e) {
+    console.log('Print failed (temp file write):', e)
+    cleanup()
+    return
+  }
+
+  printWin.loadFile(tmpFile)
+
+  printWin.webContents.on('did-fail-load', (e, code, desc) => {
+    console.log('Print failed (load error):', code, desc)
+    cleanup()
+  })
 
   printWin.webContents.on('did-finish-load', async () => {
-    const requestedName = data.options.deviceName
-    const printers = await printWin.webContents.getPrintersAsync()
-    const defaultPrinter = printers.find(p => p.isDefault)
-    const deviceName = printers.find(p => p.name === requestedName)?.name || defaultPrinter?.name;
+    try {
+      const requestedName = data.options && data.options.deviceName
+      const printers = await printWin.webContents.getPrintersAsync()
+      const defaultPrinter = printers.find(p => p.isDefault)
+      const deviceName = printers.find(p => p.name === requestedName)?.name || defaultPrinter?.name
 
-   
-
-    printWin.webContents.print({
-        ...data.options,
-        silent: true,
-        deviceName
-      }, (success, failureReason) => {
-        if (!success) console.log('Print failed:', failureReason)
-        printWin.close()
-      }
-    )
+      printWin.webContents.print({
+          ...data.options,
+          silent: true,
+          deviceName
+        }, (success, failureReason) => {
+          if (!success) console.log('Print failed:', failureReason)
+          cleanup()
+        }
+      )
+    } catch (err) {
+      console.log('Print failed (print error):', err)
+      cleanup()
+    }
   })
 })
