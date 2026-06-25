@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, session } = require('electron');
+const { app, BrowserWindow, ipcMain, session, Menu } = require('electron');
 const path = require('path')
 const fs   = require('fs')
 
@@ -40,7 +40,7 @@ app.on('ready', () => {
     }
   });
 
-  // mainWindow.setMenuBarVisibility(false);
+  Menu.setApplicationMenu(null);
   mainWindow.loadFile((__dirname, 'src/index.html'));
   mainWindow.maximize()
   mainWindow.show()
